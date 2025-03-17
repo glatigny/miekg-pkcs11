@@ -119,6 +119,83 @@ func (p *GCMParams) Free() {
 	p.arena = nil
 }
 
+// CCMParams represents the parameters for the AES-CCM mechanism.
+type CCMParams struct {
+	arena
+	params  *C.CK_CCM_PARAMS
+	nonce   []byte
+	aad     []byte
+	dataLen int
+	macLen  int
+}
+
+// NewCCMParams returns a pointer to AES-CCM parameters that can be used with the CKM_AES_GCM mechanism.
+// The Free() method must be called after the operation is complete.
+//
+// Encrypt/Decrypt. As an example:
+//
+//    ccmParams := pkcs11.NewCCMParams(make([]byte, 12), nil, len(pt))
+//    p.ctx.EncryptInit(session, []*pkcs11.Mechanism{pkcs11.NewMechanism(pkcs11.CKM_AES_CCM,cccmParams)},
+//			aesObjHandle)
+//    ct, _ := p.ctx.Encrypt(session, pt)
+//    nonce := gcmParams.Nonce()
+//    ccmParams.Free()
+//
+func NewCCMParams(nonce, aad []byte, dataLen int, macLen int) *CCMParams {
+	return &CCMParams{
+		nonce:   nonce,
+		aad:     aad,
+		dataLen: dataLen,
+		macLen:  macLen,
+	}
+}
+
+func cCCMParams(p *CCMParams) []byte {
+	params := C.CK_CCM_PARAMS{
+		ulDataLen: C.CK_ULONG(p.dataLen),
+		ulMACLen: C.CK_ULONG(p.macLen),
+	}
+	var arena arena
+	if len(p.nonce) > 0 {
+		nonce, nonceLen := arena.Allocate(p.nonce)
+		params.pNonce = C.CK_BYTE_PTR(nonce)
+		params.ulNonceLen = nonceLen
+	}
+	if len(p.aad) > 0 {
+		aad, aadLen := arena.Allocate(p.aad)
+		params.pAAD = C.CK_BYTE_PTR(aad)
+		params.ulAADLen = aadLen
+	}
+	p.Free()
+	p.arena = arena
+	p.params = &params
+	return memBytes(unsafe.Pointer(&params), unsafe.Sizeof(params))
+}
+
+// IV returns a copy of the actual Nonce used for the operation.
+func (p *CCMParams) Nonce() []byte {
+	if p == nil || p.params == nil {
+		return nil
+	}
+	newNonce := C.GoBytes(unsafe.Pointer(p.params.pNonce), C.int(p.params.ulNonceLen))
+	nonce := make([]byte, len(newNonce))
+	copy(nonce, newNonce)
+	return nonce
+}
+
+// Free deallocates the memory reserved for the HSM to write back the actual Nonce.
+//
+// This must be called after the entire operation is complete, i.e. after
+// Encrypt or EncryptFinal. It is safe to call Free multiple times.
+func (p *CCMParams) Free() {
+	if p == nil || p.arena == nil {
+		return
+	}
+	p.arena.Free()
+	p.params = nil
+	p.arena = nil
+}
+
 // NewPSSParams creates a CK_RSA_PKCS_PSS_PARAMS structure and returns it as a byte array for use with the CKM_RSA_PKCS_PSS mechanism.
 func NewPSSParams(hashAlg, mgf, saltLength uint) []byte {
 	p := C.CK_RSA_PKCS_PSS_PARAMS{

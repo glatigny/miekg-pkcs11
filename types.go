@@ -261,7 +261,7 @@ func NewMechanism(mech uint, x interface{}) *Mechanism {
 	}
 
 	switch p := x.(type) {
-	case *GCMParams, *OAEPParams, *ECDH1DeriveParams, *RSAAESKeyWrapParams:
+	case *GCMParams, *CCMParams, *OAEPParams, *ECDH1DeriveParams, *RSAAESKeyWrapParams:
 		// contains pointers; defer serialization until cMechanism
 		m.generator = p
 	case []byte:
